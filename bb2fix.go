@@ -1,5 +1,7 @@
 // POST
 // Update payment status
+// go build bb2fix.go ; strip bb2fix; cp bb2fix /media/sf_projects/bbpriority/
+
 // http://dev2.org.kbb1.com/sites/all/modules/civicrm/extern/rest.php?entity=Contribution&action=create&api_key=userkey&key=sitekey&json={"debug":1,"sequential":1,"financial_type_id":"כנס גני התערוכה","total_amount":1740,"contact_id":83916,"id":51409,"contribution_status_id":"Completed"}
 
 package main
@@ -8,17 +10,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/jmoiron/sqlx"
-	_ "github.com/jmoiron/sqlx"
-	_ "github.com/joho/godotenv/autoload"
-	_ "github.com/pkg/errors"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/jmoiron/sqlx"
+	_ "github.com/jmoiron/sqlx"
+	_ "github.com/joho/godotenv/autoload"
+	_ "github.com/pkg/errors"
 )
 
 // Read messages from database
@@ -124,7 +127,7 @@ func main() {
 func OpenPelecard() (p [2]pelecardType) {
 	p[0].user = os.Getenv("PELECARD_USER")
 	p[0].password = os.Getenv("PELECARD_PASSWORD")
-	p[0].terminal = os.Getenv("PELECARD_TERMINAL")
+	p[0].terminal = os.Getenv("ben2_PELECARD_TERMINAL")
 	if p[0].user == "" || p[0].password == "" || p[0].terminal == "" {
 		log.Fatalf("PELECARD 1 parameters are missing")
 	}
@@ -155,9 +158,9 @@ func (db databaseType) closeDb() {
 
 func ReadMessages(startFrom int) {
 
-	completed := database.getStatus("Completed")
-	pending := database.getStatus("Pending")
-	cancelled := database.getStatus("Cancelled")
+	completed := database.getStatus("Completed") // 1
+	pending := database.getStatus("Pending")		// 2
+	cancelled := database.getStatus("Cancelled")	// 3
 
 	log.Println("START run: CHECK INCOMPLETED TRANSACTIONS ---------------------------------")
 	contributionIds := database.getContributionIdsIncompleted(pending, startFrom)
@@ -170,46 +173,45 @@ func ReadMessages(startFrom int) {
 			log.Println(id, "-- payment exists, marking as completed")
 			// If yes - mark contribution as done and finish
 			database.fixContribution(id, completed)
-		} else {
-			// If no - request PeleCard for this transaction using ParamX
-			var response pelecardResponse
-			var wasError = false
-			for _, pelecard := range pelecards {
-				log.Println(id, "-- payment not exists, requesting PeleCard", pelecard.user)
-				response, err = pelecard.getPelecardTransaction(id)
-				if err == nil {
-					if response.StatusCode == "000" && response.ResultData.ShvaResult != "000" {
-						log.Println(id, "-- response PeleCard. Removed transaction, ShvaResult:", response.ResultData.ShvaResult)
-						break
-					} else if response.StatusCode == "000" && response.ResultData.ShvaResult == "000" {
-						log.Println(id, "-- response PeleCard. Transaction found")
-						break
-					} else {
-						log.Println(id, "-- response PeleCard. No error, but status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
-						wasError = true
-						continue
-					}
-				} else {
-					if wasError {
-						log.Println(id, "-- second error", pelecard.user)
-						fck(err)
-					} else {
-						log.Println(id, "-- first error", pelecard.user)
-						wasError = true
-					}
+			continue
+		}
+		// If no - request PeleCard for this transaction using ParamX
+		var response pelecardResponse
+		var wasError = false
+		for _, pelecard := range pelecards {
+			log.Println(id, "-- payment not exists, requesting PeleCard", pelecard.user)
+			response, err = pelecard.getPelecardTransaction(id)
+			if err == nil {
+				if response.StatusCode == "000" && response.ResultData.ShvaResult != "000" {
+					log.Println(id, "-- response PeleCard. Removed transaction, ShvaResult:", response.ResultData.ShvaResult)
+					break
 				}
+				if response.StatusCode == "000" && response.ResultData.ShvaResult == "000" {
+					log.Println(id, "-- response PeleCard. Transaction found")
+					break
+				}
+				log.Println(id, "-- response PeleCard. No error, but status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
+				wasError = true
+				continue
 			}
-			log.Println(id, "-- response PeleCard", "status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
-			if response.StatusCode != "000" || response.ResultData.ShvaResult != "000" {
-				// If there was no payment - mark contribution as cancelled
-				log.Println(id, "-- no payment found on PeleCard; marking as cancelled")
-				database.fixContribution(id, cancelled)
+			if wasError {
+				log.Println(id, "-- second error", pelecard.user)
+				fck(err)
 			} else {
-				// If information on PeleCard present -- insert bb_payment_response record and mark contribution as done
-				log.Println(id, "-- payment found on PeleCard !!!; marking as completed")
-				database.insertPayment(id, response)
-				database.fixContribution(id, completed)
+				log.Println(id, "-- first error", pelecard.user)
+				wasError = true
 			}
+		}
+		log.Println(id, "-- response PeleCard", "status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
+		if response.StatusCode != "000" || response.ResultData.ShvaResult != "000" {
+			// If there was no payment - mark contribution as cancelled
+			log.Println(id, "-- no payment found on PeleCard; marking as cancelled")
+			database.fixContribution(id, cancelled)
+		} else {
+			// If information on PeleCard present -- insert bb_payment_response record and mark contribution as done
+			log.Println(id, "-- payment found on PeleCard !!!; marking as completed")
+			database.insertPayment(id, response)
+			database.fixContribution(id, completed)
 		}
 	}
 	log.Println("FINISH run: CHECK INCOMPLETED TRANSACTIONS ---------------------------------")
@@ -225,47 +227,46 @@ func ReadMessages(startFrom int) {
 			log.Println(id, "-- payment exists, marking as completed")
 			// If yes - mark contribution as done and finish
 			database.fixInvoiceNumber(id, "")
-		} else {
-			// If no - request PeleCard for this transaction using ParamX
-			log.Println(id, "-- payment not exists, requesting PeleCard(s)")
-			var response pelecardResponse
-			var wasError = false
-			for _, pelecard := range pelecards {
-				response, err = pelecard.getPelecardTransaction(id)
-				if err == nil {
-					if response.StatusCode == "000" && response.ResultData.ShvaResult != "000" {
-						log.Println(id, "-- response PeleCard. Removed transaction, ShvaResult:", response.ResultData.ShvaResult)
-						break
-					} else if response.StatusCode == "000" && response.ResultData.ShvaResult == "000" {
-						log.Println(id, "-- response PeleCard. Transaction found")
-						break
-					} else {
-						log.Println(id, "-- response PeleCard. No error, but status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
-						wasError = true
-						continue
-					}
-				} else {
-					if wasError {
-						log.Println(id, "-- second error", pelecard.user)
-						fck(err)
-					} else {
-						log.Println(id, "-- first error", pelecard.user)
-						wasError = true
-					}
+			continue
+		}
+		// If no - request PeleCard for this transaction using ParamX
+		log.Println(id, "-- payment not exists, requesting PeleCard(s)")
+		var response pelecardResponse
+		var wasError = false
+		for _, pelecard := range pelecards {
+			response, err = pelecard.getPelecardTransaction(id)
+			if err == nil {
+				if response.StatusCode == "000" && response.ResultData.ShvaResult != "000" {
+					log.Println(id, "-- response PeleCard. Removed transaction, ShvaResult:", response.ResultData.ShvaResult)
+					break
 				}
+				if response.StatusCode == "000" && response.ResultData.ShvaResult == "000" {
+					log.Println(id, "-- response PeleCard. Transaction found")
+					break
+				}
+				log.Println(id, "-- response PeleCard. No error, but status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
+				wasError = true
+				continue
 			}
-			log.Println(id, "-- response PeleCard", "status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
-			if response.StatusCode != "000" || response.ResultData.ShvaResult != "000" {
-				// If there was no payment - mark contribution
-				log.Println(id, "-- no payment found on PeleCard; marking")
-				newCode := fmt.Sprintf("-%s", response.StatusCode)
-				database.fixInvoiceNumber(id, newCode)
+			if wasError {
+				log.Println(id, "-- second error", pelecard.user)
+				fck(err)
 			} else {
-				// If information on PeleCard present -- insert bb_payment_response record and mark contribution as done
-				log.Println(id, "-- payment found on PeleCard !!!; marking as completed")
-				database.insertPayment(id, response)
-				database.fixInvoiceNumber(id, "")
+				log.Println(id, "-- first error", pelecard.user)
+				wasError = true
 			}
+		}
+		log.Println(id, "-- response PeleCard", "status", response.StatusCode, "transaction id", response.ResultData.PelecardTransactionId)
+		if response.StatusCode != "000" || response.ResultData.ShvaResult != "000" {
+			// If there was no payment - mark contribution
+			log.Println(id, "-- no payment found on PeleCard; marking")
+			newCode := fmt.Sprintf("-%s", response.StatusCode)
+			database.fixInvoiceNumber(id, newCode)
+		} else {
+			// If information on PeleCard present -- insert bb_payment_response record and mark contribution as done
+			log.Println(id, "-- payment found on PeleCard !!!; marking as completed")
+			database.insertPayment(id, response)
+			database.fixInvoiceNumber(id, "")
 		}
 	}
 	log.Println("FINISH run: CHECK COMPLETED TRANSACTIONS WITH ERROR ------------------------")
@@ -360,7 +361,7 @@ func (db databaseType) paymentDataExists(id int64) (x bool) {
 
 func (db databaseType) getContributionIdsIncompleted(status int64, startFromId int) (ids []int64) {
 	loc, _ := time.LoadLocation("Asia/Jerusalem")
-	d := time.Duration(30 * time.Minute)
+	d := time.Duration(3 * time.Hour)
 	t := time.Now().In(loc).Add(-d)
 
 	err = db.DB.Select(&ids, `
@@ -374,7 +375,7 @@ func (db databaseType) getContributionIdsIncompleted(status int64, startFromId i
 
 func (db databaseType) getContributionIdsCompleted(status int64, startFromId int) (ids []int64) {
 	loc, _ := time.LoadLocation("Asia/Jerusalem")
-	d := time.Duration(30 * time.Minute)
+	d := time.Duration(30 * time.Hour * 24)
 	t := time.Now().In(loc).Add(-d)
 
 	err = db.DB.Select(&ids, `
