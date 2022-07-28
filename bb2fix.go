@@ -72,7 +72,7 @@ type pelecardResponse struct {
 
 var (
 	database  databaseType
-	pelecards [2]pelecardType
+	pelecards [4]pelecardType
 	err       error
 	Log       *log.Logger
 )
@@ -124,7 +124,7 @@ func main() {
 	ReadMessages(startFrom)
 }
 
-func OpenPelecard() (p [2]pelecardType) {
+func OpenPelecard() (p [4]pelecardType) {
 	p[0].user = os.Getenv("PELECARD_USER")
 	p[0].password = os.Getenv("PELECARD_PASSWORD")
 	p[0].terminal = os.Getenv("ben2_PELECARD_TERMINAL")
@@ -133,9 +133,21 @@ func OpenPelecard() (p [2]pelecardType) {
 	}
 	p[1].user = os.Getenv("PELECARD_USER1")
 	p[1].password = os.Getenv("PELECARD_PASSWORD1")
-	p[1].terminal = os.Getenv("PELECARD_TERMINAL1")
+	p[1].terminal = os.Getenv("PELECARD_RECURR_TERMINAL")
 	if p[1].user == "" || p[1].password == "" || p[1].terminal == "" {
 		log.Fatalf("PELECARD 2 parameters are missing")
+	}
+	p[2].user = os.Getenv("meshp18_PELECARD_USER")
+	p[2].password = os.Getenv("meshp18_PELECARD_PASSWORD")
+	p[2].terminal = os.Getenv("meshp18_PELECARD_TERMINAL")
+	if p[2].user == "" || p[2].password == "" || p[2].terminal == "" {
+		log.Fatalf("PELECARD 2 parameters are missing")
+	}
+	p[3].user = os.Getenv("PELECARD_USER1")
+	p[3].password = os.Getenv("PELECARD_PASSWORD1")
+	p[3].terminal = os.Getenv("PELECARD_TERMINAL1")
+	if p[3].user == "" || p[3].password == "" || p[3].terminal == "" {
+		log.Fatalf("PELECARD 3 parameters are missing")
 	}
 	return
 }
@@ -159,8 +171,8 @@ func (db databaseType) closeDb() {
 func ReadMessages(startFrom int) {
 
 	completed := database.getStatus("Completed") // 1
-	pending := database.getStatus("Pending")		// 2
-	cancelled := database.getStatus("Cancelled")	// 3
+	pending := database.getStatus("Pending")     // 2
+	cancelled := database.getStatus("Cancelled") // 3
 
 	log.Println("START run: CHECK INCOMPLETED TRANSACTIONS ---------------------------------")
 	contributionIds := database.getContributionIdsIncompleted(pending, startFrom)
