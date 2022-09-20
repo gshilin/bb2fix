@@ -1,5 +1,5 @@
 // POST
-// Update payment status and custom fields
+// Update payment status
 // go build bb2fix.go ; strip bb2fix; cp bb2fix /media/sf_projects/bbpriority/
 
 // http://dev2.org.kbb1.com/sites/all/modules/civicrm/extern/rest.php?entity=Contribution&action=create&api_key=userkey&key=sitekey&json={"debug":1,"sequential":1,"financial_type_id":"כנס גני התערוכה","total_amount":1740,"contact_id":83916,"id":51409,"contribution_status_id":"Completed"}
@@ -171,19 +171,19 @@ func (db databaseType) closeDb() {
 // Update custom fields
 func UpdateCustomFields() {
 	type group struct {
-		Cid       string
-		ContactId string
-		Token     string
-		Cardnum   string
-		Cardexp   string
-		Reference string
+		ContributionId string `db:"contribution_id"`
+		ContactId      string `db:"contact_id"`
+		Token          string `db:"token"`
+		Cardnum        string `db:"cardnum"`
+		Cardexp        string `db:"cardexp"`
+		Reference      string `db:"reference"`
 	}
 	groups := make([]group, 0)
 
 	log.Println("UpdateCustomFields -- Fetching group212...")
 	// find all contributions that are completed, but don't have custom fields
 	err = database.DB.Select(&groups, `
-		SELECT DISTINCT p.cid entity_id, COALESCE(p.token, "") token_1187, p.cardnum cardnum_1188, p.cardexp cardexp_1189, CONCAT('civicrm-', p.cid) AS reference_1190
+		SELECT DISTINCT p.cid contribution_id, cc.contact_id, COALESCE(p.token, "") token, p.cardnum cardnum, p.cardexp cardexp, CONCAT('civicrm-', p.cid) AS reference
 		FROM civicrm_bb_payment_responses p
 		INNER JOIN civicrm_contribution cc ON p.cid = cc.id	AND cc.invoice_number = 1
 		LEFT OUTER JOIN civicrm_value_payment_detai_212 d ON d.entity_id = p.cid
@@ -200,12 +200,13 @@ func UpdateCustomFields() {
 			_, err = database.DB.Exec(`
 			INSERT INTO civicrm_value_payment_detai_212(entity_id, token_1187, cardnum_1188, cardexp_1189, reference_1190)
 			VALUES (?, ?, ?, ?, ?)
-		`, group.Cid, group.Token, group.Cardnum, group.Cardexp, group.Reference)
+		`, group.ContributionId, group.Token, group.Cardnum, group.Cardexp, group.Reference)
 			if err != nil {
 				log.Printf("UpdateCustomFields212 -- Insert error %v\n", err)
 				fck(err)
 			}
 			if group.Token != "" {
+				log.Println("UpdateCustomFields -- Updating group213...")
 				_, err = database.DB.Exec(`
 			INSERT INTO civicrm_value_general_token_213(entity_id, gtoken_1191)
 			VALUES (?, ?)
