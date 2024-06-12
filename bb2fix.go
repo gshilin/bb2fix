@@ -1,6 +1,6 @@
 // POST
 // Update payment status
-// go build bb2fix.go ; strip bb2fix; cp bb2fix /media/sf_projects/bbpriority/
+// CGO_ENABLED=0 go build bb2fix.go ; strip bb2fix; cp bb2fix /media/sf_D_DRIVE/projects/bbpriority/
 
 // http://dev2.org.kbb1.com/sites/all/modules/civicrm/extern/rest.php?entity=Contribution&action=create&api_key=userkey&key=sitekey&json={"debug":1,"sequential":1,"financial_type_id":"כנס גני התערוכה","total_amount":1740,"contact_id":83916,"id":51409,"contribution_status_id":"Completed"}
 
@@ -210,7 +210,8 @@ func UpdateCustomFields() {
 				_, err = database.DB.Exec(`
 			INSERT INTO civicrm_value_general_token_213(entity_id, gtoken_1191)
 			VALUES (?, ?)
-		`, group.ContactId, group.Token)
+			ON DUPLICATE KEY UPDATE gtoken_1191 = ?
+		`, group.ContactId, group.Token, group.Token)
 				if err != nil {
 					log.Printf("UpdateCustomFields213 -- Insert error %v\n", err)
 					fck(err)
